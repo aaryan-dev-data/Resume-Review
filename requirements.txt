@@ -1,0 +1,6 @@
+streamlit
+transformers==4.34.0
+torch
+PyPDF2
+python-docx
+fpdf
