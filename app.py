@@ -44,22 +44,28 @@ def chunk_text(text, max_tokens=300):
         chunks.append(" ".join(words[i:i+max_tokens]))
     return chunks
 
-def analyze_section(section_name, section_text, analyzer):
+def analyze_section(section_name, section_text, analyzer, role_input):
     """Generate AI feedback for a section without showing the prompt."""
     if not section_text.strip():
         return f"{section_name} is missing or empty."
     
-    chunks = chunk_text(section_text, max_tokens=300)  # smaller chunks for speed
+    chunks = chunk_text(section_text, max_tokens=300)
     feedback = ""
     for chunk in chunks:
-        prompt = (
-            f"You are an expert resume reviewer. Analyze the following part of the {section_name} section. "
-            "Provide concise, actionable feedback and suggest improvements with metrics, keywords, and impact-oriented language."
-        )
+        prompt = f"""
+You are an expert resume reviewer. Review the following {section_name} section.
+- Provide concise, actionable feedback
+- Suggest metrics where possible
+- Include relevant keywords for {role_input or 'this role'}
+- Rewrite sentences to be impact-oriented
+
+Section:
+{chunk}
+"""
         try:
             response = analyzer(
-                prompt + "\n" + chunk,
-                max_length=200,
+                prompt,
+                max_length=350,
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.95
@@ -69,11 +75,11 @@ def analyze_section(section_name, section_text, analyzer):
             feedback += f"Error analyzing chunk: {str(e)}\n"
     return feedback.strip()
 
-def generate_feedback(text, analyzer):
+def generate_feedback(text, analyzer, role_input):
     sections = split_sections(text)
     feedback = {}
     for sec, content in sections.items():
-        feedback[sec] = analyze_section(sec, content, analyzer)
+        feedback[sec] = analyze_section(sec, content, analyzer, role_input)
     return feedback
 
 def get_role_keywords(role, analyzer):
@@ -116,7 +122,7 @@ def create_pdf(feedback, filename="Optimized_Resume.pdf"):
 
 # ----------------- Streamlit UI -----------------
 
-st.title("AI Resume Optimizer – Fast Section-wise Feedback + PDF Export")
+st.title("AI Resume Optimizer – Professional Feedback + PDF Export")
 
 uploaded_file = st.file_uploader("Upload your Resume (PDF or DOCX)", type=["pdf", "docx"])
 role_input = st.text_input("Target Role (optional)", "")
@@ -126,13 +132,13 @@ if uploaded_file:
     resume_text = extract_text(uploaded_file)
     st.success("Text extraction completed!")
     
-    st.info("Analyzing resume sections... This may take 10–30 seconds on first run.")
+    st.info("Analyzing resume sections... This may take 20–40 seconds on first run for flan-t5-base.")
     
-    # Use smaller model for fast deployment
-    analyzer = pipeline("text2text-generation", model="google/flan-t5-small")
+    # Use flan-t5-base for professional feedback
+    analyzer = pipeline("text2text-generation", model="google/flan-t5-base")
     
     # Section-wise feedback
-    feedback = generate_feedback(resume_text, analyzer)
+    feedback = generate_feedback(resume_text, analyzer, role_input)
     
     st.subheader("Section-wise Feedback")
     for sec, fb in feedback.items():
