@@ -36,8 +36,8 @@ def split_sections(text):
             sections[current_sec] += line + "\n"
     return sections
 
-def chunk_text(text, max_tokens=500):
-    """Split text into chunks <= max_tokens words."""
+def chunk_text(text, max_tokens=300):
+    """Split text into chunks <= max_tokens words for faster processing."""
     words = text.split()
     chunks = []
     for i in range(0, len(words), max_tokens):
@@ -45,21 +45,29 @@ def chunk_text(text, max_tokens=500):
     return chunks
 
 def analyze_section(section_name, section_text, analyzer):
-    """Generate AI feedback for a section in chunks to avoid max token errors."""
+    """Generate AI feedback for a section without showing the prompt."""
     if not section_text.strip():
         return f"{section_name} is missing or empty."
     
-    chunks = chunk_text(section_text, max_tokens=500)
+    chunks = chunk_text(section_text, max_tokens=300)  # smaller chunks for speed
     feedback = ""
     for chunk in chunks:
-        prompt = f"""You are an expert resume reviewer. Analyze this part of the {section_name} section. 
-        Provide concise, actionable feedback and suggest improvements with metrics, keywords, and impact-oriented language."""
+        prompt = (
+            f"You are an expert resume reviewer. Analyze the following part of the {section_name} section. "
+            "Provide concise, actionable feedback and suggest improvements with metrics, keywords, and impact-oriented language."
+        )
         try:
-            response = analyzer(chunk + "\n" + prompt, max_length=200)[0]['generated_text']
-            feedback += response + "\n"
+            response = analyzer(
+                prompt + "\n" + chunk,
+                max_length=200,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.95
+            )[0]['generated_text']
+            feedback += response.strip() + "\n"
         except Exception as e:
             feedback += f"Error analyzing chunk: {str(e)}\n"
-    return feedback
+    return feedback.strip()
 
 def generate_feedback(text, analyzer):
     sections = split_sections(text)
@@ -73,7 +81,7 @@ def get_role_keywords(role, analyzer):
     if not role:
         return []
     prompt = f"List 10–15 important resume keywords for a {role} role. Provide only keywords, separated by commas."
-    response = analyzer(prompt, max_length=60)[0]['generated_text']
+    response = analyzer(prompt, max_length=60, do_sample=True, temperature=0.7, top_p=0.95)[0]['generated_text']
     keywords = [kw.strip() for kw in response.split(",") if kw.strip()]
     return keywords
 
@@ -108,7 +116,7 @@ def create_pdf(feedback, filename="Optimized_Resume.pdf"):
 
 # ----------------- Streamlit UI -----------------
 
-st.title("AI Resume Optimizer – Section-wise Feedback + PDF Export")
+st.title("AI Resume Optimizer – Fast Section-wise Feedback + PDF Export")
 
 uploaded_file = st.file_uploader("Upload your Resume (PDF or DOCX)", type=["pdf", "docx"])
 role_input = st.text_input("Target Role (optional)", "")
@@ -118,8 +126,9 @@ if uploaded_file:
     resume_text = extract_text(uploaded_file)
     st.success("Text extraction completed!")
     
-    st.info("Analyzing resume sections... This may take 15-20 seconds on first run.")
-    # Use smaller model for deployment stability
+    st.info("Analyzing resume sections... This may take 10–30 seconds on first run.")
+    
+    # Use smaller model for fast deployment
     analyzer = pipeline("text2text-generation", model="google/flan-t5-small")
     
     # Section-wise feedback
@@ -130,7 +139,7 @@ if uploaded_file:
         st.markdown(f"**{sec}**")
         st.write(fb)
     
-    # Role-specific ATS keywords
+    # Role-based ATS keywords
     role_keywords = get_role_keywords(role_input, analyzer) if role_input else []
     present, missing = check_ats_keywords(resume_text, role_keywords)
     
@@ -142,18 +151,11 @@ if uploaded_file:
     else:
         st.write("Enter a target role to see ATS keyword suggestions.")
     
-    # Overall suggestions for missing sections
+    # Overall suggestions
     st.subheader("Overall Suggestions")
-    if "SUMMARY" not in feedback or "missing" in feedback.get("SUMMARY", "").lower():
-        st.write("- Add a concise summary with measurable achievements.")
-    if "EXPERIENCE" not in feedback or "missing" in feedback.get("EXPERIENCE", "").lower():
-        st.write("- Include detailed experience bullets with metrics.")
-    if "SKILLS" not in feedback or "missing" in feedback.get("SKILLS", "").lower():
-        st.write("- Clearly list programming languages, tools, and relevant platforms.")
-    if "PROJECTS" not in feedback:
-        st.write("- Consider adding relevant projects to highlight practical skills.")
-    if "EDUCATION" not in feedback:
-        st.write("- Include your educational background for completeness.")
+    for sec in ["SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS", "EDUCATION"]:
+        if sec not in feedback or "missing" in feedback.get(sec, "").lower():
+            st.write(f"- Consider improving or adding the **{sec}** section.")
     
     # PDF Export
     st.subheader("Download Optimized Resume Feedback PDF")
