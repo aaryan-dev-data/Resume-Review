@@ -36,16 +36,30 @@ def split_sections(text):
             sections[current_sec] += line + "\n"
     return sections
 
+def chunk_text(text, max_tokens=500):
+    """Split text into chunks <= max_tokens words."""
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), max_tokens):
+        chunks.append(" ".join(words[i:i+max_tokens]))
+    return chunks
+
 def analyze_section(section_name, section_text, analyzer):
-    """Generate AI feedback for a section."""
+    """Generate AI feedback for a section in chunks to avoid max token errors."""
     if not section_text.strip():
         return f"{section_name} is missing or empty."
     
-    prompt = f"""You are an expert resume reviewer. Analyze the {section_name} section.
-    Provide concise, actionable feedback. Suggest improvements with measurable achievements, keywords, and impact-oriented language."""
-    
-    response = analyzer(section_text + "\n" + prompt, max_length=200)[0]['generated_text']
-    return response
+    chunks = chunk_text(section_text, max_tokens=500)
+    feedback = ""
+    for chunk in chunks:
+        prompt = f"""You are an expert resume reviewer. Analyze this part of the {section_name} section. 
+        Provide concise, actionable feedback and suggest improvements with metrics, keywords, and impact-oriented language."""
+        try:
+            response = analyzer(chunk + "\n" + prompt, max_length=200)[0]['generated_text']
+            feedback += response + "\n"
+        except Exception as e:
+            feedback += f"Error analyzing chunk: {str(e)}\n"
+    return feedback
 
 def generate_feedback(text, analyzer):
     sections = split_sections(text)
@@ -105,7 +119,8 @@ if uploaded_file:
     st.success("Text extraction completed!")
     
     st.info("Analyzing resume sections... This may take 15-20 seconds on first run.")
-    analyzer = pipeline("text2text-generation", model="google/flan-t5-base")
+    # Use smaller model for deployment stability
+    analyzer = pipeline("text2text-generation", model="google/flan-t5-small")
     
     # Section-wise feedback
     feedback = generate_feedback(resume_text, analyzer)
